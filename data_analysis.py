@@ -26,7 +26,7 @@ n = int(len(encoded_text) * 0.9)
 train_data = encoded_text[:n]
 val_data = encoded_text[n:]
 
-block_size = 8
+block_size = 16
 #print(train_data[:block_size +1])
 
 x = train_data[:block_size]
@@ -83,14 +83,14 @@ class BigramLanguageModel(nn.Module):
     def generate(self, idx, max_new_tokens):
         for _ in range(max_new_tokens):
             logits, loss = self(idx)
-            print(f' shaoe of logits before reshape {logits.shape}')
+            # print(f' shaoe of logits before reshape {logits.shape}')
             # print(f' logits before reshape {logits}')
             logits = logits[-1, :]
-            print(f' logits after reshape {logits}')
+            # print(f' logits after reshape {logits}')
             probs = F.softmax(logits)
             # sample from the distribution
             idx_next = torch.multinomial(probs, num_samples=1) # (B, 1)
-            print(idx_next)
+            # print(idx_next)
             # append sampled index to the running sequence
             idx = torch.cat((idx, idx_next)) # (B, T+1)
         return idx.tolist()
@@ -99,8 +99,7 @@ m = BigramLanguageModel(64)
 logits, loss = m(xb, yb)
 
 x_val = val_data[:block_size]
-print(x_val)
-print(tokenizer.decode(m.generate(torch.tensor(x_val[:3]), max_new_tokens=1)))
+# print(tokenizer.decode(m.generate(torch.tensor(x_val[:10]), max_new_tokens=30)))
 
 
 
@@ -112,11 +111,47 @@ print(tokenizer.decode(m.generate(torch.tensor(x_val[:3]), max_new_tokens=1)))
 optimizer = torch.optim.AdamW(m.parameters(), lr = 1e-3) # for some weird reasin 1e-3 is 0.001.so e just means 10 in human language
 
 batch_size=32
-# for steps in range(100):
-#     xb, yb = get_batch('train')
-#     logits, loss = m(xb, yb)
-#     optimizer.zero_grad(set_to_none=True)
-#     loss.backward()
-#     optimizer.step()
-#     print(loss.item())
-    
+for steps in range(2):
+    xb, yb = get_batch('train')
+    logits, loss = m(xb, yb)
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    optimizer.step()
+#the loss decreases showing that we are learning something 
+print(loss.item())
+
+# x_val = val_data[:block_size]
+# print(tokenizer.decode(m.generate(torch.tensor(x_val[:10]), max_new_tokens=30)))
+
+
+# Now we learn Attention.The magic of key,query and value.
+# Query is something that I am looking for , key is what I have and if key and query matches then value is what I 
+# have to offer.
+# Every word in the sentence will have these 3 attributes associated with them
+# Attention is a kind of weighted aggregation.What does it mean that while predicting the enxt work in the
+# sentence I don't need to give same weightage to all the words that I have seen so far.
+
+
+B,T,C = 4,8,32
+x = torch.randn(B,T,C)
+
+# Single Head Self Attention
+head_size = 16
+key = nn.Linear(C, head_size, bias=False)
+query = nn.Linear(C, head_size, bias=False)
+value = nn.Linear(C, head_size, bias=False)
+
+k =key(x)  #B,T,16
+q = query(x) #B,T,16
+wei = q @ k.transpose(-2,-1)    # When we matrix multiply (B,T,16) with (B,16,T) we get (B,T,T)
+# print(wei)
+tril = torch.tril(torch.ones(T,T))
+#We mask here because it is decoder only model.You might also see this being rferenced as autoregressive model
+# which in human language means that the model can see the future words while predicting the next word.
+# When we want an encoder translation then we dont run the below code which means all tokens allowed to intearct 
+# with each other.
+wei = wei.masked_fill(tril == 0, float('-inf'))
+wei = F.softmax(wei, dim=1)
+v=value(x)
+out = wei @ v
+print(out.shape)
