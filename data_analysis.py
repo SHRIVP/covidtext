@@ -129,8 +129,7 @@ class BigramLanguageModel(nn.Module):
     #lets generate some tweets
     def generate(self, idx, max_new_tokens):
         for _ in range(max_new_tokens):
-
-            idx_cond = idx[:, -block_size]
+            idx_cond = idx[:, -block_size:]
             logits, loss = self(idx_cond)
             # print(f' shaoe of logits before reshape {logits.shape}')
             # print(f' logits before reshape {logits}')
@@ -165,5 +164,9 @@ for iter in range(max_iters):
     optimizer.step()
 
 # TODO: Generation Code is not working need to fix this.
-# x_val = val_data[:block_size]
-# print(tokenizer.decode(model.generate(torch.tensor(x_val[:3]), max_new_tokens=30)))
+x_val = val_data[:block_size]
+x_val = torch.tensor(x_val).reshape(1, block_size)
+print(x_val.shape)
+print(tokenizer.decode(model.generate(x_val, max_new_tokens=300)[0]))
+    
+# Does Bert emit variable size output
