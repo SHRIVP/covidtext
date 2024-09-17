@@ -35,10 +35,11 @@ block_size = 16
 x = train_data[:block_size]
 y = train_data[1:block_size + 1]
 batch_size = 4
-n_embd=4
+n_embd=16
 learning_rate = 1e-3
 max_iters = 3000
 eval_interval = 200
+n_heads = 4
 
 
 def get_batch(split):
@@ -91,6 +92,16 @@ class Head(nn.Module):
         v = self.value(idx)
         out = wei @ v
         return out
+    
+class MultiHeadAttention(nn.Module):
+    def __init__(self, num_heads, head_size):
+        super().__init__()
+        # this is just to average over many heads
+        self.multiheads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+
+    def forward(self, idx):
+        # -1 here signifies that we are concating the last dimension which is the channel dimension.
+        return torch.cat([h(idx) for h in self.multiheads], dim=-1)
 
 
 class BigramLanguageModel(nn.Module):
@@ -99,7 +110,7 @@ class BigramLanguageModel(nn.Module):
         # Emebedding table is a 64 by 64 matrix that will be learned.Each row in the table is a token in the tiktoken vocab which is around 100 k in our case.And each token ia vector in 64 dimensions.Each of the 64 dimensions is learning something about that token.
         self.token_embedding_table = nn.Embedding(tokenizer.n_vocab, n_embd)
         self.position_embedding_table = nn.Embedding(tokenizer.n_vocab, n_embd)
-        self.sa_head = Head(n_embd)
+        self.multi_head_attention = MultiHeadAttention(n_heads, n_embd//n_heads)
         self.linear_layer = nn.Linear(n_embd, tokenizer.n_vocab)
         
     def forward(self, idx, targets=None):
@@ -111,7 +122,7 @@ class BigramLanguageModel(nn.Module):
         x = tok_emb + pos_emb
         # print(f'When we lookup embedding table with the input data we get embedded input with shape {embedded_inp.shape}')
         # apply on head of self attention
-        x = self.sa_head(x)
+        x = self.multi_head_attention(x)
         logits = self.linear_layer(x)
         # print(f'When we apply a matrix multiplication on a table with 4 * 8 x 100 with 100 x 1000k we get an output of shape {logits.shape}')
         if targets is None:
