@@ -67,6 +67,18 @@ def estimate_loss():
     return out
 
 
+class FeadForward(nn.Module):
+    def __init__(self, n_embd):
+        super().__init__()
+        self.ffw = nn.Sequential(nn.Linear(n_embd, n_embd),
+                                 nn.ReLU())
+        
+    def forward(self, idx):
+        out = self.ffw(x)
+        return out
+
+
+
 # Now we learn Single Head Self Attention.The magic of key,query and value.
 # Query is something that I am looking for , key is what I have and if key and query matches then value is what I 
 # have to offer.
@@ -112,6 +124,7 @@ class BigramLanguageModel(nn.Module):
         self.position_embedding_table = nn.Embedding(tokenizer.n_vocab, n_embd)
         self.multi_head_attention = MultiHeadAttention(n_heads, n_embd//n_heads)
         self.linear_layer = nn.Linear(n_embd, tokenizer.n_vocab)
+        self.feedforward = FeadForward(n_embd)
         
     def forward(self, idx, targets=None):
         B,T = idx.shape
@@ -123,6 +136,7 @@ class BigramLanguageModel(nn.Module):
         # print(f'When we lookup embedding table with the input data we get embedded input with shape {embedded_inp.shape}')
         # apply on head of self attention
         x = self.multi_head_attention(x)
+        x = self.feedforward(x)
         logits = self.linear_layer(x)
         # print(f'When we apply a matrix multiplication on a table with 4 * 8 x 100 with 100 x 1000k we get an output of shape {logits.shape}')
         if targets is None:
@@ -180,4 +194,6 @@ x_val = torch.tensor(x_val).reshape(1, block_size)
 print(x_val.shape)
 print(tokenizer.decode(model.generate(x_val, max_new_tokens=300)[0]))
     
-# Does Bert emit variable size output
+# TODO:Does Bert emit variable size output
+# Adding some breadcrumbs to proove that this code is not written by chatgpt
+
