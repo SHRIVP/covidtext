@@ -66,15 +66,18 @@ def estimate_loss():
         out[split] = losses.mean()
     return out
 
-
+# This add one more layer of learned weights.So this layer will be used after self attention.so after all the words in the sentence have their key, quary 
+# and value calculated then we pass the final output to this layer.
 class FeadForward(nn.Module):
     def __init__(self, n_embd):
         super().__init__()
-        self.ffw = nn.Sequential(nn.Linear(n_embd, n_embd),
-                                 nn.ReLU())
+        self.ffw = nn.Sequential(
+            nn.Linear(n_embd, 4 * n_embd),
+            nn.ReLU(),
+            nn.Linear(4 * n_embd, n_embd))
         
     def forward(self, idx):
-        out = self.ffw(x)
+        out = self.ffw(idx)
         return out
 
 
@@ -110,10 +113,30 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         # this is just to average over many heads
         self.multiheads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        self.projection = nn.Linear(n_embd, n_embd)
 
     def forward(self, idx):
         # -1 here signifies that we are concating the last dimension which is the channel dimension.
-        return torch.cat([h(idx) for h in self.multiheads], dim=-1)
+        out = torch.cat([h(idx) for h in self.multiheads], dim=-1)
+        out = self.projection(out)
+        return out
+    
+
+class Blocks(nn.Module):
+    def __init__(self, n_embd, num_heads):
+        super().__init__()
+        # First we will make the tokens/words to communicate with each other using Multi Head Attention
+        head_size = n_embd // num_heads # if you don;t recall which I don't :). When we converted single head attention to multi head attention
+        # we had a conacatenation step at the end which simply contanetaed the output from say 4 heads giving a total of 8 + 8 + 8 + 8 outsupt.
+        # So that means each head needs ti be only 8 dimenional to finally make it 32 dimensional.
+        self.sa = MultiHeadAttention(num_heads, head_size)
+        # Now we need to do computation on individual token/words
+        self.ffd = FeadForward(n_embd)
+
+    def forward(self, x):
+        x = x + self.sa(x)
+        x = x + self.ffd(x)
+        return x
 
 
 class BigramLanguageModel(nn.Module):
@@ -122,9 +145,14 @@ class BigramLanguageModel(nn.Module):
         # Emebedding table is a 64 by 64 matrix that will be learned.Each row in the table is a token in the tiktoken vocab which is around 100 k in our case.And each token ia vector in 64 dimensions.Each of the 64 dimensions is learning something about that token.
         self.token_embedding_table = nn.Embedding(tokenizer.n_vocab, n_embd)
         self.position_embedding_table = nn.Embedding(tokenizer.n_vocab, n_embd)
-        self.multi_head_attention = MultiHeadAttention(n_heads, n_embd//n_heads)
+        # self.multi_head_attention = MultiHeadAttention(n_heads, n_embd//n_heads)
+        # self.feedforward = FeadForward(n_embd)
+        self.attnblocks = nn.Sequential(
+            Blocks(n_embd, num_heads=4),
+            Blocks(n_embd, num_heads=4),
+            Blocks(n_embd, num_heads=4))
         self.linear_layer = nn.Linear(n_embd, tokenizer.n_vocab)
-        self.feedforward = FeadForward(n_embd)
+        
         
     def forward(self, idx, targets=None):
         B,T = idx.shape
@@ -135,8 +163,8 @@ class BigramLanguageModel(nn.Module):
         x = tok_emb + pos_emb
         # print(f'When we lookup embedding table with the input data we get embedded input with shape {embedded_inp.shape}')
         # apply on head of self attention
-        x = self.multi_head_attention(x)
-        x = self.feedforward(x)
+        # x = self.multi_head_attention(x)
+        x = self.attnblocks(x)
         logits = self.linear_layer(x)
         # print(f'When we apply a matrix multiplication on a table with 4 * 8 x 100 with 100 x 1000k we get an output of shape {logits.shape}')
         if targets is None:
