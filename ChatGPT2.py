@@ -214,9 +214,9 @@ class GPTLanguageModel(nn.Module):
     
 model = GPTLanguageModel()
 model = model.to(device)
-total_params = sum(p.numel() for p in model.parameters())/1e6
-print(f'Number of Parameters in the Model : {total_params} Million Parameters')
-print(f'Total space required to run this model : {4*total_params/1e6} mb')
+total_params = sum(p.numel() for p in model.parameters())
+print(f'Number of Parameters in the Model : {total_params/1e6} Million Parameters')
+print(f'Total space required to run this model : {8*total_params/1e6} mb')
 
 # Now we will optimize our learning .We will try to cover all relevant topics like Stochastic Gradient Descent
 # backpropagation etc.We will do this but later once we have understood self attention.
