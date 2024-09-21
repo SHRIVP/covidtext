@@ -41,7 +41,6 @@ torch.manual_seed(42)
 x = train_data[:block_size]
 y = train_data[1:block_size + 1]
 
-val_data = val_data.to(device)
 
 
 
@@ -236,7 +235,7 @@ for iter in range(max_iters):
 
 # TODO: Generation Code is not working need to fix this.
 x_val = val_data[:block_size]
-x_val = torch.tensor(x_val).reshape(1, block_size)
+x_val = torch.tensor(x_val).reshape(1, block_size).to(device)
 print(tokenizer.decode(model.generate(x_val, max_new_tokens=300)[0]))
     
 # TODO:Does Bert emit variable size output
