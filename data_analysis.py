@@ -41,6 +41,9 @@ torch.manual_seed(42)
 x = train_data[:block_size]
 y = train_data[1:block_size + 1]
 
+val_data = val_data.to(device)
+
+
 
 def get_batch(split):
     data = train_data if split == 'train' else val_data
