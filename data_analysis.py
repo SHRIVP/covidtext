@@ -132,10 +132,14 @@ class Blocks(nn.Module):
         self.sa = MultiHeadAttention(num_heads, head_size)
         # Now we need to do computation on individual token/words
         self.ffd = FeadForward(n_embd)
+        # We add layernorms to normalize across the rows so that all the values across the n_embd channels have a mean 0 and standard deviation of 1
+        # To handwrite layernorm need to check Karpathy's Make More Series Part3
+        self.ln1 = nn.LayerNorm(n_embd)
+        self.ln2 = nn.LayerNorm(n_embd)
 
     def forward(self, x):
-        x = x + self.sa(x)
-        x = x + self.ffd(x)
+        x = x + self.sa(self.ln1(x))
+        x = x + self.ffd(self.ln2(x))
         return x
 
 
@@ -150,7 +154,8 @@ class BigramLanguageModel(nn.Module):
         self.attnblocks = nn.Sequential(
             Blocks(n_embd, num_heads=4),
             Blocks(n_embd, num_heads=4),
-            Blocks(n_embd, num_heads=4))
+            Blocks(n_embd, num_heads=4),
+            nn.LayerNorm(n_embd))
         self.linear_layer = nn.Linear(n_embd, tokenizer.n_vocab)
         
         
