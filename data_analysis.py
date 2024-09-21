@@ -27,13 +27,13 @@ train_data = encoded_text[:n]
 val_data = encoded_text[n:]
 
 
-batch_size = 64  # number of sentences processed parallely
-block_size = 256 # maximum context length for predictions
-n_embd=384
+batch_size = 16  # number of sentences processed parallely
+block_size = 32 # maximum context length for predictions
+n_embd=48
 learning_rate = 3e-4
 max_iters = 3000
 eval_interval = 200
-n_heads = 6
+n_heads = 4
 dropout=0.2
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 torch.manual_seed(42)
