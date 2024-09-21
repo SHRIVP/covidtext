@@ -3,14 +3,12 @@ import tiktoken
 import torch as torch
 import torch.nn as nn
 from torch.nn import functional as F
-torch.manual_seed(42)
+
 
 # Load the data
 data = pd.read_csv('./data/corona_nlp_train.csv', encoding='utf-8', encoding_errors='ignore')
-#print(data.head())
 
 text = data['OriginalTweet']
-#print(text.head())
 
 # Make it one big text
 
@@ -21,7 +19,6 @@ text = ' '.join(text)
 
 tokenizer = tiktoken.get_encoding('cl100k_base')
 encoded_text = tokenizer.encode(text) # This will return a list of integers
-#print(encoded_text[:100])
 
 # Lets now split the data
 
@@ -29,17 +26,20 @@ n = int(len(encoded_text) * 0.9)
 train_data = encoded_text[:n]
 val_data = encoded_text[n:]
 
-block_size = 16
-#print(train_data[:block_size +1])
+
+batch_size = 64  # number of sentences processed parallely
+block_size = 256 # maximum context length for predictions
+n_embd=384
+learning_rate = 3e-4
+max_iters = 3000
+eval_interval = 200
+n_heads = 6
+dropout=0.2
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+torch.manual_seed(42)
 
 x = train_data[:block_size]
 y = train_data[1:block_size + 1]
-batch_size = 4
-n_embd=16
-learning_rate = 1e-3
-max_iters = 3000
-eval_interval = 200
-n_heads = 4
 
 
 def get_batch(split):
@@ -49,6 +49,7 @@ def get_batch(split):
     # print(f' the input for this batch:  {x}')
     # creates the labels such that if the input is i labels is learning.when the input is i learrning the labels is deep etc.
     y = torch.stack([torch.tensor(data[i+1:i+block_size+1]) for i in ix])
+    x,y = x.to(device), y.to(device)
     return x, y
 
 
@@ -74,7 +75,9 @@ class FeadForward(nn.Module):
         self.ffw = nn.Sequential(
             nn.Linear(n_embd, 4 * n_embd),
             nn.ReLU(),
-            nn.Linear(4 * n_embd, n_embd))
+            nn.Linear(4 * n_embd, n_embd),
+            nn.Dropout(dropout)
+            )
         
     def forward(self, idx):
         out = self.ffw(idx)
@@ -95,6 +98,7 @@ class Head(nn.Module):
         self.query = nn.Linear(n_embd, head_size, bias=False)
         self.value = nn.Linear(n_embd, head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+        self.dropout = nn.Dropout(dropout)
                              
     def forward(self, idx, targets=None):
         B,T,C = idx.shape
@@ -104,6 +108,7 @@ class Head(nn.Module):
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
         # I still don't understand why we do softmax.Interview answer to convert scores to probs.why ? don't know
         wei = F.softmax(wei, dim=1)
+        wei = self.dropout(wei)
         v = self.value(idx)
         out = wei @ v
         return out
@@ -114,11 +119,12 @@ class MultiHeadAttention(nn.Module):
         # this is just to average over many heads
         self.multiheads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
         self.projection = nn.Linear(n_embd, n_embd)
+        self.dropot = nn.Dropout(dropout)
 
     def forward(self, idx):
         # -1 here signifies that we are concating the last dimension which is the channel dimension.
         out = torch.cat([h(idx) for h in self.multiheads], dim=-1)
-        out = self.projection(out)
+        out = self.dropot(self.projection(out))
         return out
     
 
@@ -143,15 +149,18 @@ class Blocks(nn.Module):
         return x
 
 
-class BigramLanguageModel(nn.Module):
-    def __init__(self, vocab_size):
-        super(BigramLanguageModel, self).__init__()
+class GPTLanguageModel(nn.Module):
+    def __init__(self):
+        super().__init__()
         # Emebedding table is a 64 by 64 matrix that will be learned.Each row in the table is a token in the tiktoken vocab which is around 100 k in our case.And each token ia vector in 64 dimensions.Each of the 64 dimensions is learning something about that token.
         self.token_embedding_table = nn.Embedding(tokenizer.n_vocab, n_embd)
         self.position_embedding_table = nn.Embedding(tokenizer.n_vocab, n_embd)
         # self.multi_head_attention = MultiHeadAttention(n_heads, n_embd//n_heads)
         # self.feedforward = FeadForward(n_embd)
         self.attnblocks = nn.Sequential(
+            Blocks(n_embd, num_heads=4),
+            Blocks(n_embd, num_heads=4),
+            Blocks(n_embd, num_heads=4),
             Blocks(n_embd, num_heads=4),
             Blocks(n_embd, num_heads=4),
             Blocks(n_embd, num_heads=4),
@@ -164,7 +173,7 @@ class BigramLanguageModel(nn.Module):
         # What we send to miodle is 4 sentences of 8 words each.What we expect from the model is to predict the next word in the sentence.In one pass all the 4 sentences in the batch is processes simultaneously by looking up the token in the embedding table.
         #Each token in the embedding table is of 64 dimensions.
         tok_emb = self.token_embedding_table(idx)
-        pos_emb = self.position_embedding_table(torch.arange(T))
+        pos_emb = self.position_embedding_table(torch.arange(T, device = device))
         x = tok_emb + pos_emb
         # print(f'When we lookup embedding table with the input data we get embedded input with shape {embedded_inp.shape}')
         # apply on head of self attention
@@ -201,7 +210,8 @@ class BigramLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx.tolist()
     
-model = BigramLanguageModel(64)
+model = GPTLanguageModel()
+model = model.to(device)
 
 # Now we will optimize our learning .We will try to cover all relevant topics like Stochastic Gradient Descent
 # backpropagation etc.We will do this but later once we have understood self attention.
@@ -224,7 +234,6 @@ for iter in range(max_iters):
 # TODO: Generation Code is not working need to fix this.
 x_val = val_data[:block_size]
 x_val = torch.tensor(x_val).reshape(1, block_size)
-print(x_val.shape)
 print(tokenizer.decode(model.generate(x_val, max_new_tokens=300)[0]))
     
 # TODO:Does Bert emit variable size output
