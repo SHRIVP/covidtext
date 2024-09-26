@@ -9,11 +9,8 @@
 
 import torch as torch
 import torch.nn as nn
-from torch.nn import functional as F
 import pandas as pd
 import tiktoken
-import torch as torch
-import torch.nn as nn
 from torch.nn import functional as F
 
 
@@ -40,13 +37,13 @@ train_data = encoded_text[:n]
 val_data = encoded_text[n:]
 
 
-batch_size = 128 # number of sentences processed parallely
-block_size = 64 # maximum context length for predictions
-n_embd=384
+batch_size = 8 # number of sentences processed parallely
+block_size = 8 # maximum context length for predictions
+n_embd=8
 learning_rate = 3e-4
-max_iters = 5000
-eval_interval = 500
-n_heads = 6
+max_iters = 300
+eval_interval = 100
+n_heads = 4
 dropout=0.2
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 torch.manual_seed(42)
@@ -84,16 +81,16 @@ def estimate_loss():
 
 
 class MLP(nn.Module):
-    def __init__(self, config):
+    def __init__(self, n_embd, multiple_of, ffn_dim_multiplier=None,):
         super().__init__()
-        hidden_dim = 4 * config.n_embd
+        hidden_dim = 4 * n_embd
         hidden_dim = int(2 * hidden_dim/3) # no idea why are we doing this
-        if config.ffn_dim_multiplier is not None:
-            hidden_dim = int(config.ffn_dim_multiplier * hidden_dim)
-        hidden_dim = config.multiple_of * ((hidden_dim + config.multiple_of - 1) // config.multiple_of)
-        self.c_fc = nn.Linear(config.n_embd, hidden_dim, bias=False)
-        self.c_fc2 = nn.Linear(config.n_embd, hidden_dim, bias=False)
-        self.proj = nn.Linear(hidden_dim, config.n_embd, bias=False)
+        if ffn_dim_multiplier is not None:
+            hidden_dim = int(ffn_dim_multiplier * hidden_dim)
+        hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+        self.c_fc = nn.Linear(n_embd, hidden_dim, bias=False)
+        self.c_fc2 = nn.Linear(n_embd, hidden_dim, bias=False)
+        self.proj = nn.Linear(hidden_dim, n_embd, bias=False)
 
     def forward(self, x):
         x1 = self.c_fc(x)
@@ -106,13 +103,14 @@ class MLP(nn.Module):
     
 
 
-class RMSNorm(nn.module):
+class RMSNorm(nn.Module):
     def __init__(self, dim , eps):
+            super().__init__()
             self.eps = eps
             self.weight = nn.Parameter(torch.ones(dim))
 
     def _norm(self, x):
-            torch.sqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+            return x * torch.sqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
 
     def forward(self, x):
@@ -182,22 +180,20 @@ class MultiHeadAttention(nn.Module):
         return out
     
 
-class Blocks(nn.Module):
+class   Blocks(nn.Module):
     def __init__(self, n_embd, num_heads):
         super().__init__()
         head_size = n_embd // num_heads # if you don;t recall which I don't :). When we converted single head attention to multi head attention
-        # For LLAMA before calling self attention they call Root Mean Square Normalized
+        # For LLAMA before calling self attention they call Root Mean Square Normalized.Being innovative here and 
+        # just replacing the gpt2 block with llama block everything else remains the same.
+        self.ln1 = RMSNorm(n_embd, 1e-5)
         self.sa = MultiHeadAttention(num_heads, head_size)
-        # Now we need to do computation on individual token/words
-        self.ffd = FeadForward(n_embd)
-        # We add layernorms to normalize across the rows so that all the values across the n_embd channels have a mean 0 and standard deviation of 1
-        # To handwrite layernorm need to check Karpathy's Make More Series Part3
-        self.ln1 = nn.LayerNorm(n_embd)
-        self.ln2 = nn.LayerNorm(n_embd)
+        self.ln2 = RMSNorm(n_embd, 1e-5)
+        self.mlp = MLP(n_embd, 1024)
 
     def forward(self, x):
         x = x + self.sa(self.ln1(x))
-        x = x + self.ffd(self.ln2(x))
+        x = x + self.mlp(self.ln2(x))
         return x
 
 
