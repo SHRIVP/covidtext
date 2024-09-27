@@ -41,8 +41,8 @@ batch_size = 8 # number of sentences processed parallely
 block_size = 8 # maximum context length for predictions
 n_embd=8
 learning_rate = 3e-4
-max_iters = 300
-eval_interval = 100
+max_iters = 50
+eval_interval = 5
 n_heads = 4
 dropout=0.2
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -81,7 +81,7 @@ def estimate_loss():
 
 
 class MLP(nn.Module):
-    def __init__(self, n_embd, multiple_of, ffn_dim_multiplier=None,):
+    def __init__(self, n_embd, multiple_of, ffn_dim_multiplier=None):
         super().__init__()
         hidden_dim = 4 * n_embd
         hidden_dim = int(2 * hidden_dim/3) # no idea why are we doing this
@@ -109,8 +109,9 @@ class RMSNorm(nn.Module):
             self.eps = eps
             self.weight = nn.Parameter(torch.ones(dim))
 
+    # rsqrt elementwise take the reciprocal of the sqrt.
     def _norm(self, x):
-            return x * torch.sqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+            return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
 
     def forward(self, x):
@@ -193,7 +194,9 @@ class   Blocks(nn.Module):
 
     def forward(self, x):
         x = x + self.sa(self.ln1(x))
+        # print(x)
         x = x + self.mlp(self.ln2(x))
+        # print(x)
         return x
 
 
