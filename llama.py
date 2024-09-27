@@ -11,6 +11,7 @@ import torch as torch
 import torch.nn as nn
 import pandas as pd
 import tiktoken
+import math
 from torch.nn import functional as F
 
 
@@ -166,6 +167,8 @@ class Head(nn.Module):
         out = wei @ v
         return out
     
+
+    
 class MultiHeadAttention(nn.Module):
     def __init__(self, num_heads, head_size):
         super().__init__()
@@ -181,14 +184,42 @@ class MultiHeadAttention(nn.Module):
         return out
     
 
+# This is basically merging Head and Multi Head Modules into 1 single Module
+class CausalAttention(nn.Module):
+    def __init__(self, n_embd, num_heads, block_size):
+        super().__init__()
+        assert n_embd % num_heads == 0 # Its important that the remainder is 0 as otherwise we can't break the number of channels into equal number of heads
+        # Instead of having 3 linear modules as you see above in head we can just have one
+        self.c_attn = nn.Linear(n_embd, 3 * n_embd)
+        self.c_proj = nn.Linear(n_embd, n_embd)
+        self.register_buffer("bias", torch.tril(torch.ones(block_size, block_size).view(1, 1, block_size, block_size)))
+
+    def forward(self, x):
+        B,T,C = x.size() # Number of sentences in one batch, Number of words/tokens in one sentence, Number of channels in one word
+        qkv = self.c_attn(x)
+        q, k, v = qkv.split(n_embd, dim=2)
+        # 
+        k = k.view(B, T, n_heads, C // n_heads).transpose(1,2) #(B, nh, T, hs)
+        q = q.view(B, T, n_heads, C // n_heads).transpose(1,2)
+        v = v.view(B, T, n_heads, C // n_heads).transpose(1,2)
+
+
+        att = (q @ k.transpose(-2, -1)) * (1 / math.sqrt(k.size(-1)))
+        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
+        att = F.softmax(att, dim=-1)
+        y = att @ v # (B, nh, T, T) @ (B, nh, T , hs) --> (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # this is similar to concatenating all the haeds side by side
+        y = self.c_proj(y)
+        return y
+    
+
 class   Blocks(nn.Module):
     def __init__(self, n_embd, num_heads):
         super().__init__()
-        head_size = n_embd // num_heads # if you don;t recall which I don't :). When we converted single head attention to multi head attention
         # For LLAMA before calling self attention they call Root Mean Square Normalized.Being innovative here and 
         # just replacing the gpt2 block with llama block everything else remains the same.
         self.ln1 = RMSNorm(n_embd, 1e-5)
-        self.sa = MultiHeadAttention(num_heads, head_size)
+        self.sa = CausalAttention(n_embd, num_heads, block_size)
         self.ln2 = RMSNorm(n_embd, 1e-5)
         self.mlp = MLP(n_embd, 1024)
 
