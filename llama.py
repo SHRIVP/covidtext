@@ -12,6 +12,7 @@ import torch.nn as nn
 import pandas as pd
 import tiktoken
 import math
+import time
 from torch.nn import functional as F
 
 
@@ -306,6 +307,7 @@ optimizer = torch.optim.AdamW(model.parameters(), lr = learning_rate)
 
 
 for iter in range(max_iters):
+    t0 = time.time()
     if iter % eval_interval == 0:
         losses = estimate_loss()
         print(f"step {iter} train loss {losses['train']:.4f}, val loss {losses['val']:.4f} ")
@@ -315,6 +317,12 @@ for iter in range(max_iters):
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
+    # this line will not run on mac device
+    torch.cuda.synchronize()
+    t1 = time.time()
+    dt = (t1 - t0)* 1000
+    # Time taken for each iteration
+    print(f'Time in ms for this iterration dt: {dt:.2f}ms')
 
 # TODO: Generation Code is not working need to fix this.
 x_val = val_data[100:100+block_size]
