@@ -40,15 +40,18 @@ val_data = encoded_text[n:]
 
 
 batch_size = 8 # number of sentences processed parallely
-block_size = 8 # maximum context length for predictions
-n_embd=8
+block_size = 1024 # maximum context length for predictions
+n_embd=64
 learning_rate = 3e-4
 max_iters = 50
 eval_interval = 5
 n_heads = 4
 dropout=0.2
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+print(f'Using Device : {device}')
 torch.manual_seed(42)
+# converts everything to tfloat32 instead of default float 32 which means it has smaller mantissa bits compared to float 32
+#torch.set_float32_matmul_precision("high")
 
 x = train_data[:block_size]
 y = train_data[1:block_size + 1]
