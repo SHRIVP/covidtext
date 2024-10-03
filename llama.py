@@ -316,7 +316,8 @@ for iter in range(max_iters):
         print(f"step {iter} train loss {losses['train']:.4f}, val loss {losses['val']:.4f} ")
 
     xb, yb = get_batch('train')
-    logits, loss = model(xb, yb)
+    with torch.autocast(device_type=device, dtype=torch.bfloat16):
+        logits, loss = model(xb, yb)
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
