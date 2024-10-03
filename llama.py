@@ -207,11 +207,16 @@ class CausalAttention(nn.Module):
         q = q.view(B, T, n_heads, C // n_heads).transpose(1,2)
         v = v.view(B, T, n_heads, C // n_heads).transpose(1,2)
 
-
-        att = (q @ k.transpose(-2, -1)) * (1 / math.sqrt(k.size(-1)))
-        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
-        att = F.softmax(att, dim=-1)
-        y = att @ v # (B, nh, T, T) @ (B, nh, T , hs) --> (B, nh, T, hs)
+        # implemeting flash attention using pytorch .the idea was to do online softmax and focus on memory architecture rather than focussing on
+        # flops as most of the operations are operation bound meaning the tensore core wait for read and write and that the memory access is 
+        # bottleneck
+        #att = (q @ k.transpose(-2, -1)) * (1 / math.sqrt(k.size(-1)))
+        #att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
+        #att = F.softmax(att, dim=-1)
+        #y = self.c_proj(y)
+        y = F.scaled_dot_product_attention(q,k,v, is_causal = True)
+        
+        #y = att @ v # (B, nh, T, T) @ (B, nh, T , hs) --> (B, nh, T, hs)
         y = y.transpose(1, 2).contiguous().view(B, T, C) # this is similar to concatenating all the haeds side by side
         y = self.c_proj(y)
         return y
