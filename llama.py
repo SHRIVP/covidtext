@@ -298,6 +298,7 @@ class GPTLanguageModel(nn.Module):
     
 model = GPTLanguageModel()
 model = model.to(device)
+model = torch.compile(model)
 total_params = sum(p.numel() for p in model.parameters())
 print(f'Number of Parameters in the Model : {total_params/1e6} Million Parameters')
 print(f'Total space required to run this model : {8*total_params/1e6} mb')
