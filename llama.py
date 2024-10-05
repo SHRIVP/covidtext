@@ -190,24 +190,29 @@ class MultiHeadAttention(nn.Module):
 
 # This is basically merging Head and Multi Head Modules into 1 single Module
 class CausalAttention(nn.Module):
-    def __init__(self, n_embd, num_heads, block_size):
+    def __init__(self, n_embd, num_heads, block_size, n_kv_head = 8, use_kv = False):
         super().__init__()
         assert n_embd % num_heads == 0 # Its important that the remainder is 0 as otherwise we can't break the number of channels into equal number of heads
-        # Instead of having 3 linear modules as you see above in head we can just have one
-        self.c_attn = nn.Linear(n_embd, 3 * n_embd)
+        # this is the number of channels per head
+        hd = n_embd // num_heads
+        self.c_attn = nn.Linear(n_embd, (num_heads + 2 * n_kv_head) * hd)
         self.c_proj = nn.Linear(n_embd, n_embd)
-        self.register_buffer("bias", torch.tril(torch.ones(block_size, block_size).view(1, 1, block_size, block_size)))
+        # this cache is primarily created to be used durung inference
+        if use_kv:
+            self.cache_k = torch.zeros((4, block_size, n_kv_head, hd))  # -->(4, 1024, 8, 4) I don't get whats the difference between kv head and num_heads.
+            self.cache_v = torch.zeros((4, block_size, n_kv_head, hd))
 
-    def forward(self, x):
+    def forward(self, x, n_kv_head =8, num_heads):
         B,T,C = x.size() # Number of sentences in one batch, Number of words/tokens in one sentence, Number of channels in one word
+        hd = n_embd // num_heads
         qkv = self.c_attn(x)
-        q, k, v = qkv.split(n_embd, dim=2)
+        q, k, v = qkv.split([n_embd, n_kv_head * hd, n_kv_head * hd], dim=-1) 
         # 
         k = k.view(B, T, n_heads, C // n_heads).transpose(1,2) #(B, nh, T, hs)
         q = q.view(B, T, n_heads, C // n_heads).transpose(1,2)
         v = v.view(B, T, n_heads, C // n_heads).transpose(1,2)
 
-        # implemeting flash attention using pytorch .the idea was to do online softmax and focus on memory architecture rather than focussing on
+        # implemeting flash attention using pytorch .the ide                                                a was to do online softmax and focus on memory architecture rather than focussing on
         # flops as most of the operations are operation bound meaning the tensore core wait for read and write and that the memory access is 
         # bottleneck
         #att = (q @ k.transpose(-2, -1)) * (1 / math.sqrt(k.size(-1)))
