@@ -45,7 +45,7 @@ n_embd=64
 learning_rate = 3e-4
 max_iters = 50
 eval_interval = 5
-n_heads = 4
+num_heads = 4
 dropout=0.2
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f'Using Device : {device}')
@@ -105,6 +105,41 @@ class MLP(nn.Module):
         x = x1 * x2
         x = self.proj(x)
         return x
+# to better understand ROPE we ill convert the c implementation from Karpathy's llama2.c into python
+    '''RoPE relative positional encoding: complex-valued rotate q and k in each head
+        for (int i = 0; i < dim; i+=2) {
+            int head_dim = i % head_size;
+            float freq = 1.0f / powf(10000.0f, head_dim / (float)head_size);
+            float val = pos * freq;
+            float fcr = cosf(val);
+            float fci = sinf(val);
+            int rotn = i < kv_dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
+            for (int v = 0; v < rotn; v++) {
+                float* vec = v == 0 ? s->q : s->k; // the vector to rotate (query or key)
+                float v0 = vec[i];
+                float v1 = vec[i+1];
+                vec[i]   = v0 * fcr - v1 * fci;
+                vec[i+1] = v0 * fci + v1 * fcr;
+            }
+        } '''
+# def rotational_positional_embedding():
+#     for i in range(n_embd):
+#         head_dim = i % head_size
+#         freq = 1.0 / math.pow(10000, head_dim / head_size)
+#         val = pos * freq
+#         fcr = math.cos(val)
+#         fci = math.sin(val)
+#         rotn = 2 if i < kv_dim   else 1
+#         for v in range(rotn):
+#             vec = s.q if v == 0 else s.k    
+#             v0 = vec[i]
+#             v1 = vec[i+1]
+#             vec[i] = vo * fcr - v1 * fci
+#             vec[i+1] = v0 * fci + vi * fcr
+
+     
+
+
     
 
 
@@ -170,22 +205,7 @@ class Head(nn.Module):
         v = self.value(idx)
         out = wei @ v
         return out
-    
 
-    
-class MultiHeadAttention(nn.Module):
-    def __init__(self, num_heads, head_size):
-        super().__init__()
-        # this is just to average over many heads
-        self.multiheads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
-        self.projection = nn.Linear(n_embd, n_embd)
-        self.dropot = nn.Dropout(dropout)
-
-    def forward(self, idx):
-        # -1 here signifies that we are concating the last dimension which is the channel dimension.
-        out = torch.cat([h(idx) for h in self.multiheads], dim=-1)
-        out = self.dropot(self.projection(out))
-        return out
     
 
 # This is basically merging Head and Multi Head Modules into 1 single Module
@@ -202,15 +222,16 @@ class CausalAttention(nn.Module):
             self.cache_k = torch.zeros((4, block_size, n_kv_head, hd))  # -->(4, 1024, 8, 4) I don't get whats the difference between kv head and num_heads.
             self.cache_v = torch.zeros((4, block_size, n_kv_head, hd))
 
-    def forward(self, x, n_kv_head =8, num_heads):
+    def forward(self, x, n_kv_head =8):
         B,T,C = x.size() # Number of sentences in one batch, Number of words/tokens in one sentence, Number of channels in one word
         hd = n_embd // num_heads
         qkv = self.c_attn(x)
         q, k, v = qkv.split([n_embd, n_kv_head * hd, n_kv_head * hd], dim=-1) 
         # 
-        k = k.view(B, T, n_heads, C // n_heads).transpose(1,2) #(B, nh, T, hs)
-        q = q.view(B, T, n_heads, C // n_heads).transpose(1,2)
-        v = v.view(B, T, n_heads, C // n_heads).transpose(1,2)
+        k = k.view(B, T, num_heads, C // num_heads).transpose(1,2) #(B, nh, T, hs)
+        print(k.shape)
+        q = q.view(B, T, num_heads, C // num_heads).transpose(1,2)
+        v = v.view(B, T, num_heads, C // num_heads).transpose(1,2)
 
         # implemeting flash attention using pytorch .the ide                                                a was to do online softmax and focus on memory architecture rather than focussing on
         # flops as most of the operations are operation bound meaning the tensore core wait for read and write and that the memory access is 
@@ -238,7 +259,7 @@ class   Blocks(nn.Module):
         self.mlp = MLP(n_embd, 1024)
 
     def forward(self, x):
-        x = x + self.sa(self.ln1(x))
+        x = x + self.sa(self.ln1(x),num_heads)
         # print(x)
         x = x + self.mlp(self.ln2(x))
         # print(x)
@@ -251,15 +272,15 @@ class GPTLanguageModel(nn.Module):
         # Emebedding table is a 64 by 64 matrix that will be learned.Each row in the table is a token in the tiktoken vocab which is around 100 k in our case.And each token ia vector in 64 dimensions.Each of the 64 dimensions is learning something about that token.
         self.token_embedding_table = nn.Embedding(tokenizer.n_vocab, n_embd)
         self.position_embedding_table = nn.Embedding(tokenizer.n_vocab, n_embd)
-        # self.multi_head_attention = MultiHeadAttention(n_heads, n_embd//n_heads)
+        # self.multi_head_attention = MultiHeadAttention(num_heads, n_embd//num_heads)
         # self.feedforward = FeadForward(n_embd)
         self.attnblocks = nn.Sequential(
-            Blocks(n_embd, num_heads=4),
-            Blocks(n_embd, num_heads=4),
-            Blocks(n_embd, num_heads=4),
-            Blocks(n_embd, num_heads=4),
-            Blocks(n_embd, num_heads=4),
-            Blocks(n_embd, num_heads=4),
+            Blocks(n_embd, num_heads),
+            Blocks(n_embd, num_heads),
+            Blocks(n_embd, num_heads),
+            Blocks(n_embd, num_heads),
+            Blocks(n_embd, num_heads),
+            Blocks(n_embd, num_heads),
             nn.LayerNorm(n_embd))
         self.linear_layer = nn.Linear(n_embd, tokenizer.n_vocab)
         
