@@ -122,20 +122,20 @@ class MLP(nn.Module):
                 vec[i+1] = v0 * fci + v1 * fcr;
             }
         } '''
-# def rotational_positional_embedding():
-#     for i in range(n_embd):
-#         head_dim = i % head_size
-#         freq = 1.0 / math.pow(10000, head_dim / head_size)
-#         val = pos * freq
-#         fcr = math.cos(val)
-#         fci = math.sin(val)
-#         rotn = 2 if i < kv_dim   else 1
-#         for v in range(rotn):
-#             vec = s.q if v == 0 else s.k    
-#             v0 = vec[i]
-#             v1 = vec[i+1]
-#             vec[i] = vo * fcr - v1 * fci
-#             vec[i+1] = v0 * fci + vi * fcr
+def rotational_positional_embedding(q, k, head_size, block_size):
+    for i in range(n_embd):
+        head_dim = i % head_size
+        freq = 1.0 / math.pow(10000, head_dim / head_size)
+        val = block_size * freq
+        fcr = math.cos(val)
+        fci = math.sin(val)
+        rotn = 2 if i < kv_dim   else 1
+        for v in range(rotn):
+            vec = s.q if v == 0 else s.k    
+            v0 = vec[i]
+            v1 = vec[i+1]
+            vec[i] = v0 * fcr - v1 * fci
+            vec[i+1] = v0 * fci + v1 * fcr
 
      
 
@@ -214,8 +214,8 @@ class CausalAttention(nn.Module):
         super().__init__()
         assert n_embd % num_heads == 0 # Its important that the remainder is 0 as otherwise we can't break the number of channels into equal number of heads
         # this is the number of channels per head
-        hd = n_embd // num_heads
-        self.c_attn = nn.Linear(n_embd, (num_heads + 2 * n_kv_head) * hd)
+        hd = n_embd // num_heads # 64 // 4 = 16
+        self.c_attn = nn.Linear(n_embd, (num_heads + 2 * n_kv_head) * hd) # (4 +2 * 8) * 16
         self.c_proj = nn.Linear(n_embd, n_embd)
         # this cache is primarily created to be used durung inference
         if use_kv:
@@ -226,12 +226,11 @@ class CausalAttention(nn.Module):
         B,T,C = x.size() # Number of sentences in one batch, Number of words/tokens in one sentence, Number of channels in one word
         hd = n_embd // num_heads
         qkv = self.c_attn(x)
+        print(qkv.shape)
         q, k, v = qkv.split([n_embd, n_kv_head * hd, n_kv_head * hd], dim=-1) 
-        # 
-        k = k.view(B, T, num_heads, C // num_heads).transpose(1,2) #(B, nh, T, hs)
+        q, k, v = map(lambda t : t.view(B, T, -1, hd), (q,k,v)) # 8,1024,4,16
+        q, k = rotational_positional_embedding(q, k, hd, )
         print(k.shape)
-        q = q.view(B, T, num_heads, C // num_heads).transpose(1,2)
-        v = v.view(B, T, num_heads, C // num_heads).transpose(1,2)
 
         # implemeting flash attention using pytorch .the ide                                                a was to do online softmax and focus on memory architecture rather than focussing on
         # flops as most of the operations are operation bound meaning the tensore core wait for read and write and that the memory access is 

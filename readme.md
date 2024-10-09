@@ -20,3 +20,6 @@ s Hot have encourage in the city luck a minute at idiots
 Number of parameters in model = 123 M
 Memory taken by the parameters = 1 gb
 
+Trying to understand ROPE using this repo
+https://github.com/adalkiran/llama-nuts-and-bolts/blob/main/docs/10-ROPE-ROTARY-POSITIONAL-EMBEDDINGS.md
+
