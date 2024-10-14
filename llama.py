@@ -122,25 +122,39 @@ class MLP(nn.Module):
                 vec[i+1] = v0 * fci + v1 * fcr;
             }
         } '''
-def rotational_positional_embedding(q, k, head_size, block_size):
-    for i in range(n_embd):
-        head_dim = i % head_size
-        freq = 1.0 / math.pow(10000, head_dim / head_size)
-        val = block_size * freq
-        fcr = math.cos(val)
-        fci = math.sin(val)
-        rotn = 2 if i < kv_dim   else 1
-        for v in range(rotn):
-            vec = s.q if v == 0 else s.k    
-            v0 = vec[i]
-            v1 = vec[i+1]
-            vec[i] = v0 * fcr - v1 * fci
-            vec[i+1] = v0 * fci + v1 * fcr
+# def rotational_positional_embedding(q, k, head_size, block_size):
+#     for i in range(n_embd):
+#         head_dim = i % head_size
+#         freq = 1.0 / math.pow(10000, head_dim / head_size)
+#         val = block_size * freq
+#         fcr = math.cos(val)
+#         fci = math.sin(val)
+#         rotn = 2 if i < kv_dim   else 1
+#         for v in range(rotn):
+#             vec = s.q if v == 0 else s.k    
+#             v0 = vec[i]
+#             v1 = vec[i+1]
+#             vec[i] = v0 * fcr - v1 * fci
+#             vec[i+1] = v0 * fci + v1 * fcr
+
+# I didn't understand what dies dot operator do in this context in c hence writting this in python
+
+def rotational_positional_embediing(xq, xk, freqs_cis):
+    print(xq.shape)
+    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, -2))
+    print(xq_.shape)
 
      
 
+def precompute_freqs_cis(dim, end, theta=10000.0, use_scaled=False):
+    # this cretes a list of values that represent the scaling factors across the dimensions
+    freqs = 1.0/ (theta ** (torch.arange(0,dim, 2)[: (dim // 2)].float() / dim))
+    t = torch.arange(end, device=freqs.device, dtype=torch.float32)
+    freqs = torch.outer(t, freqs)
+    # creates complex numbers for unit length and each seprated across channels
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
+    return freqs_cis
 
-    
 
 
 class RMSNorm(nn.Module):
@@ -229,7 +243,7 @@ class CausalAttention(nn.Module):
         print(qkv.shape)
         q, k, v = qkv.split([n_embd, n_kv_head * hd, n_kv_head * hd], dim=-1) 
         q, k, v = map(lambda t : t.view(B, T, -1, hd), (q,k,v)) # 8,1024,4,16
-        q, k = rotational_positional_embedding(q, k, hd, )
+        q, k = rotational_positional_embedding(q, k)
         print(k.shape)
 
         # implemeting flash attention using pytorch .the ide                                                a was to do online softmax and focus on memory architecture rather than focussing on
