@@ -139,10 +139,12 @@ class MLP(nn.Module):
 
 # I didn't understand what dies dot operator do in this context in c hence writting this in python
 
-def rotational_positional_embediing(xq, xk, freqs_cis):
+def     rotational_positional_embedding(xq, xk, freqs_cis):
     print(xq.shape)
+    print(xq)
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, -2))
     print(xq_.shape)
+    print(xq_)
 
      
 
@@ -243,7 +245,7 @@ class CausalAttention(nn.Module):
         print(qkv.shape)
         q, k, v = qkv.split([n_embd, n_kv_head * hd, n_kv_head * hd], dim=-1) 
         q, k, v = map(lambda t : t.view(B, T, -1, hd), (q,k,v)) # 8,1024,4,16
-        q, k = rotational_positional_embedding(q, k)
+        q, k = rotational_positional_embedding(q, k, freqs_cis)
         print(k.shape)
 
         # implemeting flash attention using pytorch .the ide                                                a was to do online softmax and focus on memory architecture rather than focussing on
@@ -279,12 +281,12 @@ class   Blocks(nn.Module):
         return x
 
 
-class GPTLanguageModel(nn.Module):
+class LLama(nn.Module):
     def __init__(self):
         super().__init__()
         # Emebedding table is a 64 by 64 matrix that will be learned.Each row in the table is a token in the tiktoken vocab which is around 100 k in our case.And each token ia vector in 64 dimensions.Each of the 64 dimensions is learning something about that token.
         self.token_embedding_table = nn.Embedding(tokenizer.n_vocab, n_embd)
-        self.position_embedding_table = nn.Embedding(tokenizer.n_vocab, n_embd)
+        # self.position_embedding_table = nn.Embedding(tokenizer.n_vocab, n_embd)
         # self.multi_head_attention = MultiHeadAttention(num_heads, n_embd//num_heads)
         # self.feedforward = FeadForward(n_embd)
         self.attnblocks = nn.Sequential(
@@ -294,21 +296,21 @@ class GPTLanguageModel(nn.Module):
             Blocks(n_embd, num_heads),
             Blocks(n_embd, num_heads),
             Blocks(n_embd, num_heads),
-            nn.LayerNorm(n_embd))
+            RMSNorm(n_embd))
         self.linear_layer = nn.Linear(n_embd, tokenizer.n_vocab)
+        self.freqs_cis = precompute_freqs_cis(n_embd // num_heads, block_size*2)
         
         
-    def forward(self, idx, targets=None):
+    def forward(self, idx, targets=None, start_pos=0):
         B,T = idx.shape
         # What we send to miodle is 4 sentences of 8 words each.What we expect from the model is to predict the next word in the sentence.In one pass all the 4 sentences in the batch is processes simultaneously by looking up the token in the embedding table.
         #Each token in the embedding table is of 64 dimensions.
         tok_emb = self.token_embedding_table(idx)
-        pos_emb = self.position_embedding_table(torch.arange(T, device = device))
-        x = tok_emb + pos_emb
         # print(f'When we lookup embedding table with the input data we get embedded input with shape {embedded_inp.shape}')
         # apply on head of self attention
         # x = self.multi_head_attention(x)
         x = self.attnblocks(x)
+        freq_cis = self.freqs_cis[start_pos : start_pos + T]
         logits = self.linear_layer(x)
         # print(f'When we apply a matrix multiplication on a table with 4 * 8 x 100 with 100 x 1000k we get an output of shape {logits.shape}')
         if targets is None:
