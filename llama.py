@@ -245,7 +245,11 @@ class CausalAttention(nn.Module):
         print(qkv.shape)
         q, k, v = qkv.split([n_embd, n_kv_head * hd, n_kv_head * hd], dim=-1) 
         q, k, v = map(lambda t : t.view(B, T, -1, hd), (q,k,v)) # 8,1024,4,16
-        q, k = rotational_positional_embedding(q, k, freqs_cis)
+
+        # q, k = rotational_positional_embedding(q, k, freqs_cis)
+
+        # q, k = rotational_positional_embedding(q, k, hd, )
+
         print(k.shape)
 
         # implemeting flash attention using pytorch .the ide                                                a was to do online softmax and focus on memory architecture rather than focussing on
