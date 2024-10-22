@@ -160,7 +160,7 @@ def precompute_freqs_cis(dim, end, theta=10000.0, use_scaled=False):
 
 
 class RMSNorm(nn.Module):
-    def __init__(self, dim , eps):
+    def __init__(self, dim , eps=1e-6):
             super().__init__()
             self.eps = eps
             self.weight = nn.Parameter(torch.ones(dim))
@@ -309,7 +309,7 @@ class LLama(nn.Module):
         B,T = idx.shape
         # What we send to miodle is 4 sentences of 8 words each.What we expect from the model is to predict the next word in the sentence.In one pass all the 4 sentences in the batch is processes simultaneously by looking up the token in the embedding table.
         #Each token in the embedding table is of 64 dimensions.
-        tok_emb = self.token_embedding_table(idx)
+        x = self.token_embedding_table(idx)
         # print(f'When we lookup embedding table with the input data we get embedded input with shape {embedded_inp.shape}')
         # apply on head of self attention
         # x = self.multi_head_attention(x)
@@ -346,7 +346,7 @@ class LLama(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx.tolist()
     
-model = GPTLanguageModel()
+model = LLama()
 model = model.to(device)
 model = torch.compile(model)
 total_params = sum(p.numel() for p in model.parameters())
