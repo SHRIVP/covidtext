@@ -250,7 +250,7 @@ class CausalAttention(nn.Module):
 
         # q, k = rotational_positional_embedding(q, k, hd, )
 
-        print(k.shape)
+        # q, k = rotational_positional_embedding(q, k, hd, )
 
         # implemeting flash attention using pytorch .the ide                                                a was to do online softmax and focus on memory architecture rather than focussing on
         # flops as most of the operations are operation bound meaning the tensore core wait for read and write and that the memory access is 
